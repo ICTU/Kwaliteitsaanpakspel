@@ -1,0 +1,37 @@
+[project]
+name = "kwaliteitsaanpakspel"
+version = "0.1.0"
+description = "De ICTU Kwaliteitsaanpak Softwareontwikkeling als spel"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
+
+[project.scripts]
+kwaliteitsaanpakspel = "kwaliteitsaanpakspel.cli:main"
+
+[dependency-groups]
+dev = [
+    "coverage",
+    "httpx2",
+    "ruff>=0.17.4",
+]
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.coverage.run]
+branch = true
+source = ["kwaliteitsaanpakspel"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 120

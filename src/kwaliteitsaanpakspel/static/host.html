@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Kwaliteitsaanpakspel – spelleider</title>
+  <link rel="stylesheet" href="/static/common.css">
+  <style>
+    .join { --tint: var(--ictu-baby-50); --accent: var(--ictu-baby); }
+    .join p:first-child { font-size: 2rem; }
+    .join a { font-weight: bold; color: var(--ictu-marine); }
+    #team-names { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+    #team-names li {
+      background: #fff; border: 1px solid var(--ictu-marine-500); border-radius: 1rem; padding: 0.2rem 0.75rem;
+      color: var(--ictu-marine); font-weight: 600;
+    }
+    #no-teams[hidden] { display: none; }
+    #reconnect { margin-top: 1rem; }
+    #reconnect summary { cursor: pointer; font-weight: 600; color: var(--ictu-marine); }
+    #reconnect[open] summary { margin-bottom: 0.5rem; }
+    #reconnect-links { list-style: none; margin: 0; padding: 0; }
+    #reconnect-links li { display: flex; align-items: center; gap: 0.75rem; padding: 0.2rem 0; }
+    #reconnect-links button { font-size: 0.9rem; padding: 0.15rem 0.6rem; }
+  </style>
+</head>
+<body>
+  <!-- Het kruimelpad, met de knop waarmee de spelleider een ronde start of stopt. -->
+  <header class="page-header">
+    <h1 class="breadcrumb"><span>Spelleider</span><span id="status">Teams aanmelden</span></h1>
+    <button id="action" class="primary" type="button" disabled>Start ronde 1</button>
+    <p id="error" class="error"></p>
+  </header>
+  <section id="waiting">
+    <div class="card join">
+      <p>Om je team aan te melden bij het spel, open <a href="{{join_url}}" target="_blank">{{join_url}}</a> in je browser.</p>
+      <p class="hint">Lukt het niet? Controleer of alle laptops op hetzelfde wifi-netwerk zitten en of de firewall
+        van deze laptop inkomende verbindingen toestaat.</p>
+    </div>
+    <div class="card">
+      <h2>Aangemelde teams</h2>
+      <p id="no-teams" class="hint">Nog geen teams aangemeld.</p>
+      <ul id="team-names"></ul>
+    </div>
+  </section>
+  <section id="playing" hidden>
+    <div id="scores"></div>
+  </section>
+  <section id="results" hidden>
+    <div id="results-tables"></div>
+  </section>
+  <details id="reconnect" class="card" hidden>
+    <summary>🔗 Team opnieuw verbinden</summary>
+    <p class="hint">Is een team zijn aanmelding kwijt, bijvoorbeeld omdat de browser is gewist of het team een andere
+      laptop gebruikt? Stuur het team de link; daarmee komt het weer in het spel.</p>
+    <ul id="reconnect-links"></ul>
+  </details>
+  <script type="module">
+    import {main} from "/static/host.js";
+    main();
+  </script>
+</body>
+</html>

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Kwaliteitsaanpakspel – team</title>
+  <link rel="stylesheet" href="/static/common.css">
+  <style>
+    #register label { display: block; font-weight: 600; color: var(--ictu-marine); margin-bottom: 0.4rem; }
+    #register .error:empty { display: none; }
+    #register input { margin-right: 0.5rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border-bottom: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    /* Compacte rijen in de releasetabel, zodat er zo veel mogelijk zonder scrollen zichtbaar is. */
+    #releases th, #releases td { padding: 0.25rem 0.5rem; }
+    #releases td, #releases th { text-align: right; white-space: nowrap; }
+    #releases tbody th { text-align: left; vertical-align: top; }
+    /* De labelkolommen zijn zo breed als hun inhoud; de ruimte die over is, gaat naar de releasekolommen. */
+    #releases tbody th { width: 1%; }
+    /* Geen ruimte boven de tabel, zodat die even ver onder het kruimelpad begint als de grafieken. */
+    #releases { margin: 0 0 1rem; }
+    /* Elke groep is een kaart: een eigen zachte kleur, een gekleurde streep langs de kop en witruimte ertussen. */
+    #releases tbody.group > tr > * { background: var(--tint); border-bottom: none; }
+    #releases tbody.group > tr > th[rowspan] {
+      box-shadow: inset 4px 0 0 var(--accent); padding-left: 0.75rem; color: var(--ictu-marine);
+    }
+    /* Rustige labels en getallen die netjes onder elkaar staan. */
+    #releases tbody th:not([rowspan]) { font-weight: 600; color: #3d3d3b; }
+    #releases td { font-variant-numeric: tabular-nums; }
+    #releases tbody.gap td { height: 0.6rem; padding: 0; border: none; background: none; }
+    /* In ronde 1 zijn er nog geen maatregelen: dan geen dubbele witruimte tussen het team en de risico's. */
+    #measures:empty + tbody.gap { display: none; }
+    #releases thead th { border-bottom: none; }
+    /* De huidige release is één verticale kaart: wit, met afgeronde hoeken en een schaduw. Een witte plaat achter de
+       tabel vult ook de witruimte tussen de groepen; een kader erboven geeft de schaduw. */
+    #releases .current, #releases tbody.group > tr > .current { background: #fff; }
+    /* Onderaan is ruimte voor de knop of melding om de release af te ronden, die onder de tabel in de kaart staat. */
+    .releases-area { position: relative; flex: 1 1 auto; padding-bottom: 5rem; }
+    .release-finish {
+      position: absolute; z-index: 3; box-sizing: border-box; padding: 0 0.4rem; text-align: center;
+      scroll-margin-bottom: 1rem;
+    }
+    .release-finish[hidden], .release-finish [hidden] { display: none; }
+    .release-finish button { width: 100%; font-size: 0.9rem; padding: 0.4rem 0.5rem; }
+    .release-finish p { margin: 0; font-size: 0.9rem; color: #52514e; }
+    .releases-area #releases { position: relative; z-index: 1; }
+    .current-column { position: absolute; border-radius: 0.5rem; pointer-events: none; }
+    #current-column-plate { z-index: 0; background: #fff; }
+    #current-column-frame { z-index: 2; box-shadow: 0 0 0 1px rgba(7, 41, 116, 0.12), 0 4px 16px rgba(7, 41, 116, 0.22); }
+    .negative { color: #b00020; }
+    .extra { font-weight: bold; }
+    /* Vriendelijke invoer: knopjes − en + rond een getal, en vinkjes als afgeronde knoppen in de kleur van de groep. */
+    .stepper { display: inline-flex; align-items: center; gap: 0.15rem; }
+    .stepper button {
+      width: 1.4rem; height: 1.4rem; padding: 0; font-size: 1rem; line-height: 1; border-radius: 50%; cursor: pointer;
+      border: 1px solid var(--ictu-marine-500); background: #fff; color: var(--ictu-marine);
+    }
+    .stepper button:hover:not(:disabled) { background: var(--ictu-marine-50); }
+    .stepper button:disabled { border-color: #d6d5d0; color: #c8c7c2; cursor: default; }
+    .stepper select {
+      appearance: none; border: none; background: none; font: inherit; font-variant-numeric: tabular-nums;
+      min-width: 1.8rem; text-align: center; text-align-last: center; padding: 0 0.1rem; cursor: pointer;
+    }
+    .stepper select:disabled { color: #8f8e89; cursor: default; }
+    #releases input[type="checkbox"] {
+      appearance: none; width: 1.3rem; height: 1.3rem; margin: 0; vertical-align: middle; cursor: pointer;
+      border: 2px solid var(--accent, var(--ictu-marine-500)); border-radius: 0.35rem; background: #fff;
+    }
+    #releases input[type="checkbox"]:checked {
+      background: var(--accent, var(--ictu-marine-500)) center / 0.85rem no-repeat
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
+    #releases input[type="checkbox"]:disabled { opacity: 0.35; cursor: default; }
+    #releases input[type="checkbox"]:focus-visible { outline: 2px solid var(--ictu-marine); outline-offset: 2px; }
+    /* Alleen de huidige release heeft invoerknopjes; de andere releases tonen alleen wat er is gekozen. */
+    /* Alleen de stap waar het team in de huidige release mee bezig is, heeft invoerknopjes; de rest toont alleen wat er
+       is gekozen. */
+    #releases td:not(.step-active) .stepper button { display: none; }
+    /* Even breed als een vinkje, zodat slotjes en andere symbolen ervoor onder elkaar staan, hoe lang de opties van de
+       keuzelijst ook zijn, en in dezelfde kleur als de andere getallen: de browser maakt een uitgeschakelde keuzelijst
+       anders doorzichtig. */
+    #releases td:not(.step-active) .stepper select {
+      color: inherit; opacity: 1; width: 1.3rem; min-width: 0; padding: 0; text-align: right; text-align-last: right;
+    }
+    #releases td:not(.step-active) input[type="checkbox"]:not(:checked) { visibility: hidden; }
+    /* De stappen van de release: de huidige stap heeft een tint en een kader in de kleur van de groep, de stappen die
+       nog komen zijn gedimd en de stappen die klaar zijn hebben een vinkje bij de kop. */
+    #releases tbody.group > tr > td.step-active { background: color-mix(in srgb, var(--accent) 8%, white); }
+    #releases td.step-todo { color: #b5b4ae; }
+    #releases td.step-todo input { opacity: 0.4; }
+    #releases th.step-done::after { content: " ✓"; color: var(--ictu-marine-500); font-weight: bold; }
+    .current-step {
+      position: absolute; z-index: 2; pointer-events: none; box-sizing: border-box; border-radius: 0.4rem;
+      border: 2px solid var(--ictu-marine); scroll-margin: 5rem 0 1rem;
+    }
+    .current-step.risks, .current-step.cards { border-color: var(--ictu-fuchsia); }
+    /* De knoppen naar de vorige en volgende stap: rondjes links op de boven- en onderrand van het kader. */
+    .step-button {
+      position: absolute; z-index: 3; transform: translate(-50%, -50%); width: 1.9rem; height: 1.9rem; padding: 0;
+      border-radius: 50%; border: 2px solid #fff; background: var(--ictu-marine); color: #fff; font-size: 0.8rem;
+      line-height: 1; cursor: pointer; box-shadow: 0 1px 4px rgba(7, 41, 116, 0.35);
+    }
+    .step-button.risks, .step-button.cards { background: var(--ictu-magenta); }
+    .step-button:hover { filter: brightness(1.25); }
+    .step-button:focus-visible { outline: 2px solid var(--ictu-marine); outline-offset: 2px; }
+    .step-button[hidden] { display: none; }
+    .release-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .release-bar[hidden] { display: none; }
+    /* Een label dat een knop is met twee toestanden: uitgeklapt ziet het eruit als een gewone kop, ingeklapt heeft het
+       een lichte tint en een dunne rand in de kleur van de groep. De negatieve marges zorgen dat de knop een rij niet
+       hoger maakt dan de andere rijen. */
+    .toggle {
+      font: inherit; color: var(--ictu-marine); cursor: pointer; white-space: nowrap;
+      margin: -0.2rem -0.4rem; padding: 0.15rem 0.4rem; border-radius: 0.35rem;
+      border: 1px solid transparent; background: none;
+    }
+    .toggle:hover { background: color-mix(in srgb, var(--accent, var(--ictu-marine-500)) 10%, transparent); }
+    .toggle[aria-expanded="false"] {
+      background: color-mix(in srgb, var(--accent, var(--ictu-marine-500)) 15%, white);
+      border-color: color-mix(in srgb, var(--accent, var(--ictu-marine-500)) 45%, white);
+    }
+    .toggle:disabled { cursor: default; }
+    .toggle:disabled:hover { background: none; }
+    .toggle:focus-visible { outline: 2px solid var(--ictu-marine); outline-offset: 2px; }
+    #releases tbody th.empty-group { font-weight: normal; font-style: italic; color: #52514e; }
+    .board { display: flex; gap: 3rem; align-items: flex-start; }
+    /* De grafieken blijven in beeld boven de balk onderaan; past dat niet, dan scrolt de kolom zelf. */
+    /* De grafieken staan twee aan twee als de tabel daar ruimte voor laat, en anders onder elkaar, in een kolom die zo
+       hoog is als het scherm onder de kopregel; de rijen grafieken verdelen die hoogte (zie team.js). */
+    .charts {
+      flex: 0 1 584px; min-width: 220px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      column-gap: 24px;
+      align-content: start;
+      position: sticky; top: 4rem; height: calc(100vh - 4.5rem); overflow-y: auto;
+    }
+    /* Elke grafiek is een kaartje met een lichte tint, zodat de grafieken afsteken tegen de witte pagina. */
+    .chart {
+      margin: 0 0 0.75rem; padding: 8px; border-radius: 0.5rem;
+      background: color-mix(in srgb, var(--ictu-marine-50) 60%, white);
+    }
+    .chart-plot { position: relative; }
+    /* De titel staat in het midden boven het grafiekvlak; de marges zijn die van het grafiekvlak (zie charts.js). */
+    .chart figcaption { font-weight: bold; margin-bottom: 0.25rem; text-align: center; padding: 0 16px 0 48px; }
+    .chart-grid { stroke: #dde2ec; stroke-width: 1; }
+    .chart-baseline { stroke: #8f8e89; stroke-width: 1; }
+    .chart-tick { fill: #52514e; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .chart-line { fill: none; stroke: var(--ictu-marine-500); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .chart-marker { fill: var(--ictu-marine-500); stroke: #fff; stroke-width: 2; }
+    .chart-target-line { fill: none; stroke: #8f8e89; stroke-width: 2; stroke-linejoin: round; }
+    .chart-crosshair { stroke: #8f8e89; stroke-width: 1; }
+    .chart-target { fill: transparent; outline: none; }
+    .chart-target:focus-visible { stroke: var(--ictu-marine-500); stroke-width: 1; }
+    .chart-tooltip {
+      position: absolute; pointer-events: none; width: max-content; max-width: 100%; box-sizing: border-box;
+      background: #fff; border: 1px solid #ccc; border-radius: 0.3rem; padding: 0.2rem 0.5rem; font-size: 0.8rem;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+    .chart-tooltip span { color: #52514e; }
+    #risks .tooltip:hover::after { right: auto; left: 0; }
+    .changed { text-decoration: underline dotted; }
+    /* Een tooltip die meteen verschijnt bij het aanwijzen; de tekst staat in het aria-label. */
+    .tooltip { position: relative; }
+    .tooltip:hover::after {
+      content: attr(aria-label);
+      position: absolute; right: 0; top: 1.6em; z-index: 1; white-space: pre; text-align: left;
+      background: #333; color: #fff; font-weight: normal; padding: 0.3rem 0.6rem; border-radius: 0.3rem;
+    }
+    #releases th.card-label { text-align: right; }
+  </style>
+</head>
+<body>
+  <!-- Het kruimelpad: op het aanmeldscherm het spel, daarna team › ronde › release › stap. -->
+  <header class="page-header">
+    <h1 class="breadcrumb"><span id="team-name">Kwaliteitsaanpakspel</span><span id="status">Aanmelden</span><span id="release-crumb" hidden></span><span id="step" hidden></span><span id="releases-done" hidden>Alle releases zijn afgerond – Wacht tot de spelleider de ronde stopt</span></h1>
+    <div id="release-bar" class="release-bar" hidden>
+      <p id="release-error" class="error"></p>
+    </div>
+  </header>
+  <form id="register" class="card">
+    <label for="name">Naam van je team</label>
+    <input id="name" name="name" required autofocus maxlength="30">
+    <button class="primary" type="submit">Aanmelden</button>
+    <p id="error" class="error"></p>
+  </form>
+  <section id="team" hidden>
+    <section id="waiting" class="card">
+      <p>Je team is aangemeld. Zodra de spelleider ronde 1 start, verschijnt hier het speelbord met de releases.</p>
+    </section>
+    <section id="playing" hidden>
+      <div class="board">
+      <div id="releases-area" class="releases-area">
+      <div id="current-column-plate" class="current-column" hidden></div>
+      <table id="releases">
+        <thead><tr id="release-headings"><th colspan="2"></th></tr></thead>
+        <tbody class="group" style="--tint: var(--ictu-baby-50); --accent: var(--ictu-baby)">
+          <tr id="release-business-value-targets"><th rowspan="4">🎯 Target</th><th>🏆 Business waarde</th></tr>
+          <tr id="release-bugs-targets"><th>🐛 Bugs</th></tr>
+          <tr id="release-tech-debt-targets"><th>💳 Technische schuld</th></tr>
+          <tr id="release-budgets"><th>💵 Budget</th></tr>
+        </tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody id="team-rows" class="group" style="--tint: var(--ictu-marine-50); --accent: var(--ictu-marine)">
+          <tr id="release-developers"><th id="team-heading" rowspan="2">👫 Team</th><th>👩🏻‍💻 Ontwikkelaars</th></tr>
+          <tr id="release-testers"><th>👩🏾‍🔧 Testers</th></tr>
+        </tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody id="measures" class="group" style="--tint: var(--ictu-marine-50); --accent: var(--ictu-marine)"></tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody id="risks" class="group" style="--tint: var(--ictu-fuchsia-50); --accent: var(--ictu-fuchsia)"></tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody class="group" style="--tint: var(--ictu-marine-50); --accent: var(--ictu-marine)">
+          <tr id="release-velocities"><th id="velocity-heading" rowspan="4">🚀 Velocity</th><th>💯 Totaal</th></tr>
+          <tr id="release-bug-fixing"><th>🐛 Bugs</th></tr>
+          <tr id="release-tech-debt"><th>💳 Technische schuld</th></tr>
+          <tr id="release-business-value-velocities"><th>🏆 Business waarde</th></tr>
+        </tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody class="group" style="--tint: var(--ictu-baby-50); --accent: var(--ictu-baby)">
+          <tr id="release-bug-fixing-capacities"><th rowspan="2">💪 Oploscapaciteit</th><th>🐛 Bugs</th></tr>
+          <tr id="release-tech-debt-capacities"><th>💳 Technische schuld</th></tr>
+        </tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody class="group" style="--tint: var(--ictu-fuchsia-50); --accent: var(--ictu-fuchsia)">
+          <tr id="release-delivered-business-value"><th id="delivered-heading" rowspan="6">🛠️ Bouw en test</th><th id="delivered-business-value-label">🏆 Business waarde</th></tr>
+          <tr id="release-one-point-cards"><th class="card-label">⭐️</th></tr>
+          <tr id="release-two-point-cards"><th class="card-label">⭐️⭐️</th></tr>
+          <tr id="release-three-point-cards"><th class="card-label">⭐️⭐️⭐️</th></tr>
+          <tr id="release-delivered-bugs"><th>🐛 Bugs</th></tr>
+          <tr id="release-delivered-tech-debt"><th>💳 Technische schuld</th></tr>
+        </tbody>
+        <tbody class="gap" aria-hidden="true"><tr><td colspan="6"></td></tr></tbody>
+        <tbody class="group" style="--tint: var(--ictu-baby-50); --accent: var(--ictu-baby)">
+          <tr id="release-cumulative-business-value"><th rowspan="3">🚢 Opgeleverd</th><th>🏆 Business waarde</th></tr>
+          <tr id="release-cumulative-bugs"><th>🐛 Bugs</th></tr>
+          <tr id="release-cumulative-tech-debt"><th>💳 Technische schuld</th></tr>
+        </tbody>
+      </table>
+      <div id="current-column-frame" class="current-column" hidden></div>
+      <div id="current-step-frame" class="current-step" hidden></div>
+      <button id="previous-step" class="step-button" type="button" hidden>▲</button>
+      <button id="next-step" class="step-button" type="button" hidden>▼</button>
+      <div id="release-finish" class="release-finish" hidden>
+        <button id="finish-release" class="primary" type="button"></button>
+        <p id="open-cards" hidden></p>
+      </div>
+      </div>
+      <aside id="charts" class="charts">
+        <figure class="chart">
+          <figcaption>💵 Budget</figcaption>
+          <div class="chart-plot">
+            <svg id="budget-chart" role="img" aria-label="Uitgegeven budget en totaal budget per release" width="280" height="140" viewBox="0 0 280 140"></svg>
+            <div id="budget-chart-tooltip" class="chart-tooltip" hidden></div>
+          </div>
+        </figure>
+        <figure class="chart">
+          <figcaption>🏆 Business waarde</figcaption>
+          <div class="chart-plot">
+            <svg id="business-value-chart" role="img" aria-label="Cumulatief opgeleverde business waarde en target per release" width="280" height="140" viewBox="0 0 280 140"></svg>
+            <div id="business-value-chart-tooltip" class="chart-tooltip" hidden></div>
+          </div>
+        </figure>
+        <figure class="chart">
+          <figcaption>🐛 Bugs</figcaption>
+          <div class="chart-plot">
+            <svg id="bugs-chart" role="img" aria-label="Openstaande bugs en target per release" width="280" height="140" viewBox="0 0 280 140"></svg>
+            <div id="bugs-chart-tooltip" class="chart-tooltip" hidden></div>
+          </div>
+        </figure>
+        <figure class="chart">
+          <figcaption>💳 Technische schuld</figcaption>
+          <div class="chart-plot">
+            <svg id="tech-debt-chart" role="img" aria-label="Openstaande technische schuld en target per release" width="280" height="140" viewBox="0 0 280 140"></svg>
+            <div id="tech-debt-chart-tooltip" class="chart-tooltip" hidden></div>
+          </div>
+        </figure>
+      </aside>
+      </div>
+    </section>
+    <section id="results" hidden>
+      <div id="results-tables"></div>
+    </section>
+  </section>
+  <script type="module">
+    import {main} from "/static/team.js";
+    main();
+  </script>
+</body>
+</html>
