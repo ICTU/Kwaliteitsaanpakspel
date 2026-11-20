@@ -153,10 +153,26 @@ class GameStateTest(AppTestCase):
         self.assertEqual(game_state(2, round_finished=True, finished=True), response.json())
         self.assertEqual(2, len(self.client().get("/api/teams").json()[0]["rounds"]))
 
+    def test_restart(self) -> None:
+        """Test dat de spelleider na het einde een nieuw spel kan starten, zonder teams."""
+        self.register_team()
+        for _ in range(2):
+            self.host.post("/api/game/start-round")
+            self.host.post("/api/game/finish-round")
+        response = self.host.post("/api/game/restart")
+        self.assertEqual(game_state(), response.json())
+        self.assertEqual([], self.client().get("/api/teams").json())
+
+    def test_restart_before_end(self) -> None:
+        """Test dat er geen nieuw spel kan starten zolang het spel niet is afgelopen."""
+        response = self.host.post("/api/game/restart")
+        self.assertEqual(409, response.status_code)
+        self.assertEqual("Het spel is nog niet afgelopen.", response.json()["detail"])
+
     def test_only_host_controls_game(self) -> None:
         """Test dat teams het spel niet kunnen besturen."""
         self.register_team()
-        for action in ("start-round", "finish-round"):
+        for action in ("start-round", "finish-round", "restart"):
             with self.subTest(action=action):
                 response = self.client().post(f"/api/game/{action}")
                 self.assertEqual(403, response.status_code)

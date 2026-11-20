@@ -1,6 +1,8 @@
 """Unittests voor de spelstatus."""
 
+import random
 import unittest
+from collections.abc import Sequence
 
 from kwaliteitsaanpakspel.game import (
     BUGS_PER_TESTER,
@@ -21,6 +23,7 @@ from kwaliteitsaanpakspel.game import (
     ROLE_COST,
     ROLE_PROTECTIONS,
     ROLES,
+    SHARED_RISKS,
     START_BUDGET,
     STEPS,
     TECH_DEBT_TARGET,
@@ -166,6 +169,24 @@ class RoundsTest(unittest.TestCase):
         self.assertEqual(LAST_ROUND, self.game.round)
         self.assertTrue(self.game.finished)
 
+    def test_restart(self) -> None:
+        """Test dat de spelleider na het einde een nieuw spel kan starten, waarvoor de teams zich opnieuw aanmelden."""
+        self.play_all_rounds()
+        self.game.restart()
+        self.assertEqual({}, self.game.teams)
+        self.assertFalse(self.game.started)
+        self.assertFalse(self.game.round_finished)
+        self.game.register_team("De Testers")
+        self.game.start_round()
+        self.assertEqual(1, self.game.round)
+
+    def test_restart_before_end(self) -> None:
+        """Test dat er pas een nieuw spel kan starten als het spel is afgelopen."""
+        self.game.start_round()
+        with self.assertRaisesRegex(GameError, "Het spel is nog niet afgelopen."):
+            self.game.restart()
+        self.assertEqual(["De Testers"], list(self.game.teams))
+
     def test_no_round_after_last_round(self) -> None:
         """Test dat er na de laatste ronde geen ronde meer kan starten."""
         self.play_all_rounds()
@@ -203,6 +224,11 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual([500, 1000, 0, 300], [release["cost"] for release in releases])
         self.assertEqual([22, 32, 0, 13], [release["velocity"] for release in releases])
         self.assertEqual(200, score.as_dict()["remaining_budget"])
+
+    def test_remaining_budget_per_release(self) -> None:
+        """Test dat wat er aan het eind van een release over is, het budget van de release is minus de kosten ervan."""
+        score = Score(releases=[Release(5), Release(10), Release(0), Release(3)]).as_dict()
+        self.assertEqual([1500, 500, 500, 200], [release["remaining_budget"] for release in score["releases"]])
 
     def test_business_value_target_per_release(self) -> None:
         """Test dat elke release het target voor de businesswaarde van de ronde heeft."""
@@ -1697,3 +1723,170 @@ class StepsTest(unittest.TestCase):
             self.game.finish_release("De Testers")
         with self.assertRaisesRegex(GameError, "Alle releases van deze ronde zijn al afgerond."):
             self.game.next_step("De Testers")
+
+
+class LastChoice(random.Random):
+    """Een toevalsgenerator die steeds het laatste element kiest, zodat de tests weten welk team een risico krijgt."""
+
+    def choice(self, seq: Sequence[Team]) -> Team:
+        """Kies het laatste element."""
+        return seq[-1]
+
+
+class SharedRisksTest(unittest.TestCase):
+    """Unittests voor de risico's die ook voor een ander team gelden."""
+
+    def setUp(self) -> None:
+        """Maak een spel met drie teams aan en start de eerste ronde."""
+        self.game = Game(LastChoice())
+        for name in ("De Testers", "De Bouwers", "De Beheerders"):
+            self.game.register_team(name)
+        self.game.start_round()
+
+    def release(self, team_name: str, release_number: int) -> Release:
+        """Geef een release van een team in de huidige ronde."""
+        return self.game.teams[team_name].rounds[-1].releases[release_number - 1]
+
+    def test_shared_risks(self) -> None:
+        """Test welke risico's ook voor een ander team gelden."""
+        self.assertEqual(
+            {
+                "release_not_accepted",
+                "scope_extension",
+                "operations_cannot_keep_up",
+                "target_architecture_changes",
+                "change_of_management",
+            },
+            SHARED_RISKS,
+        )
+
+    def test_risk_goes_to_next_release_of_other_team(self) -> None:
+        """Test dat een gedeeld risico na het afronden van de release ook optreedt in de volgende release van een ander
+        team, met de naam van het team waar het vandaan komt."""
+        self.game.plan_release("De Testers", 1, risks=["scope_extension"])
+        self.assertEqual(frozenset(), self.release("De Beheerders", 2).risks)
+        self.game.finish_release("De Testers")
+        release = self.release("De Beheerders", 2)
+        self.assertEqual(frozenset({"scope_extension"}), release.risks)
+        self.assertEqual({"scope_extension": "De Testers"}, release.imposed_risks)
+        self.assertEqual({"scope_extension": "De Beheerders"}, self.release("De Testers", 1).shared_risks)
+        self.assertEqual(frozenset(), self.release("De Beheerders", 1).risks)
+        self.assertEqual(frozenset(), self.release("De Bouwers", 2).risks)
+        score = self.game.teams["De Beheerders"].rounds[-1].as_dict()
+        self.assertEqual({"scope_extension": "De Testers"}, score["releases"][1]["imposed_risks"])
+        sender = self.game.teams["De Testers"].rounds[-1].as_dict()
+        self.assertEqual({"scope_extension": "De Beheerders"}, sender["releases"][0]["shared_risks"])
+        self.assertEqual(BUSINESS_VALUE_TARGET + 8, score["releases"][1]["business_value_target"])
+
+    def test_other_risks_are_not_shared(self) -> None:
+        """Test dat andere risico's alleen gelden voor het team zelf."""
+        self.game.plan_release("De Testers", 1, risks=["major_update", "no_time_at_client"])
+        self.game.finish_release("De Testers")
+        for name in ("De Bouwers", "De Beheerders"):
+            self.assertEqual(frozenset(), self.release(name, 2).risks)
+
+    def test_risk_goes_to_random_other_team(self) -> None:
+        """Test dat het team dat het risico krijgt, willekeurig wordt gekozen uit de andere teams."""
+        candidates = []
+        self.game.rng.choice = lambda seq: candidates.append([team.name for team in seq]) or seq[0]
+        self.game.plan_release("De Bouwers", 1, risks=["change_of_management"])
+        self.game.finish_release("De Bouwers")
+        self.assertEqual([["De Testers", "De Beheerders"]], candidates)
+        self.assertEqual({"change_of_management": "De Bouwers"}, self.release("De Testers", 2).imposed_risks)
+
+    def test_no_risk_for_teams_in_last_release(self) -> None:
+        """Test dat een team in de laatste release geen risico krijgt; dan gaat het naar een ander team."""
+        for _ in range(RELEASES_PER_ROUND - 1):
+            self.game.finish_release("De Beheerders")
+        self.game.plan_release("De Testers", 1, risks=["scope_extension"])
+        self.game.finish_release("De Testers")
+        self.assertEqual({"scope_extension": "De Testers"}, self.release("De Bouwers", 2).imposed_risks)
+        self.assertEqual({}, self.release("De Beheerders", RELEASES_PER_ROUND).imposed_risks)
+
+    def test_no_other_team_in_releases_before_last(self) -> None:
+        """Test dat het risico niet verder gaat als alle andere teams in de laatste release zitten of klaar zijn."""
+        for name in ("De Bouwers", "De Beheerders"):
+            for _ in range(RELEASES_PER_ROUND - 1):
+                self.game.finish_release(name)
+        self.game.finish_release("De Beheerders")
+        self.game.plan_release("De Testers", 1, risks=["scope_extension"])
+        self.game.finish_release("De Testers")
+        for name in self.game.teams:
+            self.assertEqual(
+                [{}] * RELEASES_PER_ROUND, [r.imposed_risks for r in self.game.teams[name].rounds[-1].releases]
+            )
+        self.assertEqual({}, self.release("De Testers", 1).shared_risks)
+
+    def test_imposed_risk_cannot_be_unchecked(self) -> None:
+        """Test dat het team een risico van een ander team niet kan uitvinken."""
+        self.game.plan_release("De Testers", 1, risks=["scope_extension"])
+        self.game.finish_release("De Testers")
+        self.game.finish_release("De Beheerders")
+        self.game.plan_release("De Beheerders", 2, risks=["major_update"])
+        self.assertEqual(frozenset({"scope_extension", "major_update"}), self.release("De Beheerders", 2).risks)
+        self.game.plan_release("De Beheerders", 2, risks=[])
+        self.assertEqual(frozenset({"scope_extension"}), self.release("De Beheerders", 2).risks)
+
+    def test_imposed_risk_is_not_passed_on(self) -> None:
+        """Test dat een team een risico dat het van een ander team kreeg, niet doorgeeft."""
+        self.game.plan_release("De Testers", 1, risks=["scope_extension"])
+        self.game.finish_release("De Testers")
+        self.game.finish_release("De Beheerders")
+        self.game.finish_release("De Beheerders")
+        for name in ("De Testers", "De Bouwers"):
+            self.assertEqual(
+                [{}] * RELEASES_PER_ROUND, [r.imposed_risks for r in self.game.teams[name].rounds[-1].releases]
+            )
+        self.assertEqual({}, self.release("De Beheerders", 2).shared_risks)
+
+    def test_several_imposed_risks(self) -> None:
+        """Test dat een team meer risico's van andere teams in dezelfde release kan krijgen."""
+        self.game.plan_release("De Testers", 1, risks=["scope_extension"])
+        self.game.finish_release("De Testers")
+        self.game.plan_release("De Bouwers", 1, risks=["release_not_accepted", "change_of_management"])
+        self.game.finish_release("De Bouwers")
+        release = self.release("De Beheerders", 2)
+        expected = {
+            "scope_extension": "De Testers",
+            "release_not_accepted": "De Bouwers",
+            "change_of_management": "De Bouwers",
+        }
+        self.assertEqual(expected, release.imposed_risks)
+        self.assertEqual(frozenset(expected), release.risks)
+
+
+class SharedRisksProtectionTest(unittest.TestCase):
+    """Unittests voor de bescherming tegen risico's van andere teams, in ronde 2."""
+
+    def setUp(self) -> None:
+        """Maak een spel met twee teams aan en start de tweede ronde."""
+        self.game = Game(LastChoice())
+        for name in ("De Testers", "De Bouwers"):
+            self.game.register_team(name)
+        self.game.start_round()
+        self.game.finish_round()
+        self.game.start_round()
+
+    def release(self, release_number: int) -> Release:
+        """Geef een release van het team dat de risico's krijgt."""
+        return self.game.teams["De Bouwers"].rounds[-1].releases[release_number - 1]
+
+    def test_role_protects_against_imposed_risk(self) -> None:
+        """Test dat een rol die tegen het risico beschermt, het risico van een ander team weghaalt, en dat het risico
+        terugkomt als het team de rol niet meer inzet."""
+        self.game.plan_release("De Testers", 1, risks=["target_architecture_changes"])
+        self.game.finish_release("De Testers")
+        self.game.finish_release("De Bouwers")
+        self.game.plan_release("De Bouwers", 2, roles=["architect"])
+        self.assertEqual(frozenset(), self.release(2).risks)
+        self.assertEqual({"target_architecture_changes": "De Testers"}, self.release(2).imposed_risks)
+        self.game.plan_release("De Bouwers", 2, roles=[])
+        self.assertEqual(frozenset({"target_architecture_changes"}), self.release(2).risks)
+
+    def test_preliminary_phase_protects_against_imposed_risk(self) -> None:
+        """Test dat na de voorfase een release niet meer kan worden afgekeurd, ook niet door een ander team."""
+        self.game.plan_release("De Bouwers", 1, measures=["preliminary_phase"])
+        self.game.plan_release("De Testers", 1, risks=["release_not_accepted"])
+        self.game.finish_release("De Testers")
+        self.assertEqual(frozenset(), self.release(2).risks)
+        self.assertEqual({"release_not_accepted": "De Testers"}, self.release(2).imposed_risks)
