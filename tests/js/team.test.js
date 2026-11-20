@@ -128,7 +128,7 @@ function cardSelects(browser) {
 // De vinkjes per risico, per release.
 function riskCheckboxes(browser) {
   const [dataLoss, externalAudit] = browser.element("risks").children;
-  const checkboxes = (row, labels) => row.children.slice(labels).map(cell => cell.children[1]);
+  const checkboxes = (row, labels) => row.children.slice(labels).map(control);
   return {data_loss: checkboxes(dataLoss, 2), external_audit: checkboxes(externalAudit, 1)};
 }
 
@@ -249,7 +249,7 @@ describe("main", () => {
     assert.equal(browser.element("register").hidden, false);
   });
 
-  test("tijdens een ronde ziet het team per release het budget, de ontwikkelaars en de kosten", async t => {
+  test("tijdens een ronde ziet het team per release wat er aan het eind van het budget over is, de ontwikkelaars en de kosten", async t => {
     const browser = fakeBrowser(t, routes([TEAM_A, TEAM_B], gameState(2)), {[STORAGE_KEY]: "Team A", [TOKEN_KEY]: "geheim"});
     await main();
     assert.deepEqual(visibleScreens(browser), ["team", "playing"]);
@@ -261,8 +261,8 @@ describe("main", () => {
     assert.deepEqual(releases.targets, [80, 80, 80, 80]);
     assert.deepEqual(releases.bugsTargets, [4, 4, 4, 4]);
     assert.deepEqual(releases.techDebtTargets, [4, 4, 4, 4]);
-    assert.deepEqual(releases.budgets, ["2.000 €CTU", "1.000 €CTU", "0 €CTU", "−500 €CTU"]);
-    assert.deepEqual(releases.negative, [false, false, false, true]);
+    assert.deepEqual(releases.budgets, ["1.000 €CTU", "0 €CTU", "−500 €CTU", "−500 €CTU"]);
+    assert.deepEqual(releases.negative, [false, false, true, true]);
     assert.deepEqual(releases.developers, ["10", "10", "5", "0"]);
     assert.deepEqual(releases.velocities, [32, 32, 22, 0]);
     assert.deepEqual(releases.bugFixing, ["0", "0", "0", "0"]);
@@ -379,7 +379,7 @@ describe("main", () => {
     const releases = releaseTable(browser);
     assert.deepEqual(releases.testers, ["0", "2", "0", "0"]);
     assert.deepEqual(releases.developers, ["5", "0", "0", "0"]);
-    assert.deepEqual(releases.budgets, ["2.000 €CTU", "1.500 €CTU", "1.300 €CTU", "1.300 €CTU"]);
+    assert.deepEqual(releases.budgets, ["1.500 €CTU", "1.300 €CTU", "1.300 €CTU", "1.300 €CTU"]);
   });
 
   test("een keuzelijst voor testers waar het team mee bezig is, wordt niet overschreven", async t => {
@@ -802,13 +802,42 @@ describe("main", () => {
     const checkboxes = riskCheckboxes(browser);
     assert.deepEqual([checkboxes.external_audit[0].disabled, checkboxes.data_loss[0].disabled], [true, true]);
     assert.equal(checkboxes.data_loss[1].disabled, true);  // niet de huidige release
-    const shield = cell => cell.children[0];
+    const shield = cell => cell.children[1];
     const [, externalAudit] = browser.element("risks").children;
     const [first, second] = externalAudit.children.slice(1).map(shield);
     assert.deepEqual([first.hidden, first.textContent, first.ariaLabel], [false, "🛡️ ", "Beschermd door 👨🏻‍💼 Architect"]);
     assert.deepEqual([second.hidden, second.textContent, second.ariaLabel], [true, "", ""]);
-    const dataLoss = browser.element("risks").children[0].children[2].children[0];  // het schildje
+    const dataLoss = browser.element("risks").children[0].children[2].children[1];  // het schildje
     assert.equal(dataLoss.ariaLabel, "Beschermd: nog geen software gereed");
+  });
+
+  test("een risico van een ander team is aangevinkt, niet uit te vinken en legt uit waar het vandaan komt", async t => {
+    const team = {name: "Team A", rounds: [score([1, 0, 0, 0], 0, 0, 0, {
+      risks: [["data_loss"], [], [], []], imposedRisks: [{data_loss: "Team B"}, {}, {}, {}], step: "risks",
+    })]};
+    const browser = fakeBrowser(t, routes([team], gameState(1)), {[STORAGE_KEY]: "Team A", [TOKEN_KEY]: "geheim"});
+    await main();
+    const checkboxes = riskCheckboxes(browser);
+    assert.deepEqual([checkboxes.data_loss[0].checked, checkboxes.data_loss[0].disabled], [true, true]);
+    assert.equal(checkboxes.external_audit[0].disabled, false);
+    const sender = cell => cell.children[0];
+    const [dataLoss, externalAudit] = browser.element("risks").children;
+    const [first, second] = dataLoss.children.slice(2).map(sender);
+    assert.deepEqual([first.hidden, first.textContent, first.ariaLabel], [false, "⬇️ ", "Dit risico trof ook Team B"]);
+    assert.deepEqual([second.hidden, second.textContent, second.ariaLabel], [true, "", ""]);
+    assert.equal(sender(externalAudit.children[1]).hidden, true);
+  });
+
+  test("een risico dat het team aan een ander team heeft opgelegd, legt uit naar welk team het is gegaan", async t => {
+    const team = {name: "Team A", rounds: [score([1, 0, 0, 0], 0, 0, 1, {
+      risks: [["data_loss"], [], [], []], sharedRisks: [{data_loss: "Team B"}, {}, {}, {}],
+    })]};
+    const browser = fakeBrowser(t, routes([team], gameState(1)), {[STORAGE_KEY]: "Team A", [TOKEN_KEY]: "geheim"});
+    await main();
+    const [dataLoss] = browser.element("risks").children;
+    const mail = dataLoss.children[2].children[0];
+    assert.deepEqual([mail.hidden, mail.textContent, mail.ariaLabel], [false, "⬆️ ", "Dit risico treft ook Team B"]);
+    assert.equal(dataLoss.children[3].children[0].hidden, true);
   });
 
   test("in ronde 2 zijn er maatregelen, alleen te nemen als ze beschikbaar zijn", async t => {
@@ -965,7 +994,7 @@ describe("main", () => {
     assert.equal(request.options.body, JSON.stringify({developers: 7}));
     assert.equal(browser.element("release-error").textContent, "");
     assert.deepEqual(releaseTable(browser).velocities, [22, 28, 0, 0]);
-    assert.deepEqual(releaseTable(browser).budgets, ["2.000 €CTU", "1.500 €CTU", "800 €CTU", "800 €CTU"]);
+    assert.deepEqual(releaseTable(browser).budgets, ["1.500 €CTU", "800 €CTU", "800 €CTU", "800 €CTU"]);
   });
 
   test("als inhuren niet lukt, ziet het team de foutmelding", async t => {
@@ -1035,12 +1064,23 @@ describe("main", () => {
     assert.deepEqual(resultsTexts(browser.element("results-tables")).map(([heading]) => heading), ["Ronde 1", "Ronde 2"]);
   });
 
+  test("na een nieuw spel laadt de pagina opnieuw, zodat het team met een leeg speelbord begint", async t => {
+    const browser = fakeBrowser(t, routes([TEAM_A], gameState(2)), {[STORAGE_KEY]: "Team A", [TOKEN_KEY]: "geheim"});
+    await main();
+    browser.server.routes = routes([], gameState());
+    await browser.timers.tick();
+    assert.equal(browser.storage.getItem(STORAGE_KEY), null);
+    assert.equal(browser.location.reloads, 1);
+  });
+
   test("een team dat de server niet kent, ziet weer het aanmeldformulier", async t => {
     const browser = fakeBrowser(t, routes([], gameState()), {[STORAGE_KEY]: "Team A", [TOKEN_KEY]: "geheim"});
     await main();
     assert.equal(browser.storage.getItem(STORAGE_KEY), null);
     assert.equal(browser.storage.getItem(TOKEN_KEY), null);
     assert.deepEqual(browser.timers.cleared, [1]);
+    // Er was nog geen speelbord, dus de pagina hoeft niet opnieuw te laden.
+    assert.equal(browser.location.reloads, 0);
     assert.equal(browser.element("register").hidden, false);
     assert.equal(browser.element("team").hidden, true);
     // Het kruimelpad is weer dat van het aanmeldscherm.

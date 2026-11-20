@@ -19,8 +19,16 @@ describe("nextAction", () => {
     assert.deepEqual(nextAction(gameState(1, true)), {path: "start-round", label: "Start ronde 2"});
   });
 
-  test("na het einde is er geen actie meer", () => {
-    assert.equal(nextAction(gameState(2, true)), null);
+  test("na het einde kan de spelleider, na bevestiging, een nieuw spel starten", () => {
+    const action = nextAction(gameState(2, true));
+    assert.deepEqual([action.path, action.label], ["restart", "Start nieuw spel"]);
+    assert.match(action.confirmation, /wist alle teams en resultaten/);
+  });
+
+  test("alleen een nieuw spel vraagt om bevestiging", () => {
+    for (const game of [gameState(), gameState(1), gameState(1, true)]) {
+      assert.equal(nextAction(game).confirmation, undefined);
+    }
   });
 });
 
@@ -92,13 +100,19 @@ describe("main", () => {
     assert.deepEqual(resultsTexts(browser.element("results-tables")), [[null, [["Team A", "Afgerond", "2.000 €CTU", "1.000 €CTU", 80, 3, 4, 2, 4, 0]]]]);
   });
 
-  test("na het einde zijn de resultaten van beide rondes zichtbaar en is de knop verdwenen", async t => {
+  test("na het einde zijn de resultaten van beide rondes zichtbaar en kan de spelleider een nieuw spel starten", async t => {
     const browser = fakeBrowser(t, routes([TEAM_A], gameState(2, true)));
     await main();
     assert.equal(browser.element("status").textContent, "Het spel is afgelopen");
-    assert.equal(browser.element("action").hidden, true);
-    assert.equal(browser.element("action").textContent, "");
+    assert.equal(browser.element("action").textContent, "Start nieuw spel");
     assert.deepEqual(resultsTexts(browser.element("results-tables")).map(([heading]) => heading), ["Ronde 1", "Ronde 2"]);
+  });
+
+  test("na het einde zijn er geen links om opnieuw te verbinden", async t => {
+    const browser = fakeBrowser(t, routes([TEAM_A], gameState(2, true)));
+    await main();
+    assert.equal(browser.element("reconnect").hidden, true);
+    assert.equal(browser.server.requests.some(request => request.route === "GET /api/teams/links"), false);
   });
 
   test("zonder teams zijn er geen links om opnieuw te verbinden", async t => {
@@ -150,6 +164,26 @@ describe("main", () => {
     assert.deepEqual(browser.server.posts().map(request => request.route), ["POST /api/game/finish-round"]);
     assert.equal(browser.element("error").textContent, "");
     assert.equal(browser.element("action").textContent, "Start ronde 2");
+  });
+
+  test("na bevestiging start een nieuw spel en melden de teams zich opnieuw aan", async t => {
+    const browser = fakeBrowser(t, routes([TEAM_A], gameState(2, true), {"POST /api/game/restart": [200, gameState()]}));
+    await main();
+    browser.server.routes = routes([], gameState(), {"POST /api/game/restart": [200, gameState()]});
+    await browser.element("action").dispatch("click");
+    assert.equal(browser.confirmations.asked.length, 1);
+    assert.deepEqual(browser.server.posts().map(request => request.route), ["POST /api/game/restart"]);
+    assert.equal(browser.element("status").textContent, "Teams aanmelden");
+    assert.deepEqual([browser.element("action").textContent, browser.element("action").disabled], ["Start ronde 1", true]);
+  });
+
+  test("zonder bevestiging start er geen nieuw spel", async t => {
+    const browser = fakeBrowser(t, routes([TEAM_A], gameState(2, true)));
+    browser.confirmations.answer = false;
+    await main();
+    await browser.element("action").dispatch("click");
+    assert.equal(browser.confirmations.asked.length, 1);
+    assert.deepEqual(browser.server.posts(), []);
   });
 
   test("een mislukte actie toont de foutmelding", async t => {

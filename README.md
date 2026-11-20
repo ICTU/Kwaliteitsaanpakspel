@@ -23,13 +23,13 @@ De browser opent dan automatisch de spelleiderpagina. Daarop staat het adres dat
 3. Elk team doorloopt per release een aantal stappen. De stap waar het team mee bezig is, heeft een kader in de releasetabel; met ▲ en ▼ op dat kader gaat het team naar de vorige of volgende stap:
    - 👫 **Team**: ontwikkelaars en testers inhuren en, vanaf ronde 2, rollen inzetten;
    - 📋 **Maatregelen** (vanaf ronde 2);
-   - ⚠️ **Risico's**: de opgetreden risico's aanvinken;
+   - ⚠️ **Risico's**: de opgetreden risico's aanvinken. Sommige risico's gelden ook voor een ander team: rondt een team een release met zo'n risico af, dan staat het risico al aangevinkt in de volgende release van een willekeurig ander team dat nog niet in release 4 zit. Dat team kan het risico niet uitvinken (⬇️ laat zien van welk team het komt, en bij het versturende team laat ⬆️ zien naar welk team het is gegaan), maar kan in ronde 2 wel een rol of maatregel inzetten die ertegen beschermt;
    - 🚀 **Velocity**: de velocity verdelen over bugs, technische schuld en business waarde;
    - 🛠️ **Bouw en test**: de omgedraaide kaartjes invoeren. Zijn alle kaartjes ingevoerd, dan rondt het team de release af en begint de volgende.
 4. Tijdens de ronde ziet de spelleider per team bij welke release en stap het is, en hoe het ervoor staat ten opzichte van de targets. Naast de releasetabel ziet elk team grafieken van het budget, de business waarde, de bugs en de technische schuld.
-5. De spelleider stopt de ronde; iedereen ziet dan de resultaten. Daarna start de spelleider ronde 2 en, na afloop daarvan, zien alle teams de resultaten van beide rondes.
+5. De spelleider stopt de ronde; iedereen ziet dan de resultaten. Daarna start de spelleider ronde 2 en, na afloop daarvan, zien alle teams de resultaten van beide rondes. Met **Start nieuw spel** begint de spelleider daarna een nieuw spel, waarvoor de teams zich opnieuw aanmelden.
 
-Is een team zijn aanmelding kwijt, bijvoorbeeld omdat de browser is gewist of het team een andere laptop gebruikt, dan kan de spelleider via **🔗 Team opnieuw verbinden** een link kopiëren waarmee het team weer in het spel komt.
+Is een team tijdens het spel zijn aanmelding kwijt, bijvoorbeeld omdat de browser is gewist of het team een andere laptop gebruikt, dan kan de spelleider via **🔗 Team opnieuw verbinden** een link kopiëren waarmee het team weer in het spel komt.
 
 ### Kunnen de teams het spel niet bereiken?
 

@@ -419,11 +419,14 @@ export function main() {
       const riskCells = [newCell(riskGroup.emptyRow)];
       const riskCheckboxes = {};
       const riskShields = {};
+      const riskArrows = {};
       for (const [key, row] of Object.entries(riskRows)) {
         const [cell, checkbox] = newCheckbox(row, () => plan(releaseNumber, {risks: checked(riskCheckboxes)}));
-        // Een schildje als een rol, maatregel of reden tegen het risico beschermt.
+        // Een pijl omlaag als een ander team het risico heeft opgelegd, een pijl omhoog als het team het risico aan een
+        // ander team heeft opgelegd, en een schildje als een rol, maatregel of reden tegen het risico beschermt.
+        riskArrows[key] = newIcon();
         riskShields[key] = newIcon();
-        cell.replaceChildren(riskShields[key], checkbox);
+        cell.replaceChildren(riskArrows[key], riskShields[key], checkbox);
         riskCells.push(cell);
         riskCheckboxes[key] = checkbox;
       }
@@ -457,7 +460,7 @@ export function main() {
         ],
         businessValue, bugs, techDebtTarget, budget, developerSelect, testerSelect, velocity, bugFixingSelect, techDebtSelect,
         businessValueVelocity, bugFixingCapacity, techDebtCapacity, cardSelects, deliveredBusinessValue, cumulative,
-        riskCheckboxes, riskShields, roleCheckboxes: {}, roleLocks: {}, measureCheckboxes: {}, measureLocks: {},
+        riskCheckboxes, riskShields, riskArrows, roleCheckboxes: {}, roleLocks: {}, measureCheckboxes: {}, measureLocks: {},
         extraDevelopers, extraTesters, developerLock, testerLock,
         // De cellen van elke stap; de rollen en maatregelen komen er in ronde 2 bij.
         stepCells: {
@@ -519,16 +522,24 @@ export function main() {
       showChanges(column.businessValue, release.business_value_target, release.business_value_target_changes);
       showChanges(column.bugs, release.bugs_target, release.bugs_target_changes);
       showChanges(column.techDebtTarget, release.tech_debt_target, release.tech_debt_target_changes);
-      showChanges(column.budget, formatMoney(release.budget), release.budget_changes, formatMoney);
-      column.budget.classList.toggle("negative", release.budget < 0);
+      showChanges(column.budget, formatMoney(release.remaining_budget), release.budget_changes, formatMoney);
+      column.budget.classList.toggle("negative", release.remaining_budget < 0);
       showChanges(column.velocity, release.velocity, release.velocity_changes);
       column.businessValueVelocity.textContent = release.business_value_velocity;
       showChanges(column.bugFixingCapacity, release.bug_fixing_capacity, release.bug_fixing_capacity_changes);
       showChanges(column.techDebtCapacity, release.tech_debt_capacity, release.tech_debt_capacity_changes);
-      showCheckboxes(column.riskCheckboxes, release.risks, active("risks"), key => key in release.protected_risks);
+      // Een risico van een ander team kan het team niet uitvinken.
+      showCheckboxes(column.riskCheckboxes, release.risks, active("risks"),
+        key => key in release.protected_risks || key in release.imposed_risks);
       for (const [key, shield] of Object.entries(column.riskShields)) {
         const cause = release.protected_risks[key];
         showIcon(shield, "🛡️ ", cause && protectionText(cause));
+      }
+      // Een risico van een ander team gaat niet verder, dus een risico is opgelegd of doorgegeven, niet allebei.
+      for (const [key, arrow] of Object.entries(column.riskArrows)) {
+        const [sender, receiver] = [release.imposed_risks[key], release.shared_risks[key]];
+        if (receiver) showIcon(arrow, "⬆️ ", `Dit risico treft ook ${receiver}`);
+        else showIcon(arrow, "⬇️ ", sender && `Dit risico trof ook ${sender}`);
       }
       // In de huidige release legt een slotje uit waarom het team iets niet kan kiezen.
       const teamLock = current && release.team_locked && `${labels.preliminary_phase}: de voorfase heeft een eigen team`;
@@ -712,6 +723,8 @@ export function main() {
       show(team, game, teams);
     } else {
       forget();
+      // Na een nieuw spel begint het team met een leeg speelbord, zonder de rijen van het vorige spel.
+      if (releaseColumns !== null) location.reload();
     }
   }
 

@@ -6,6 +6,9 @@
   --ictu-magenta: #B500C7; --ictu-magenta-50: #F8E6F9; --ictu-fuchsia: #FE33FF; --ictu-fuchsia-50: #FFEBFF;
   --ictu-baby: #00B5FF; --ictu-baby-50: #E6F8FF; --ictu-aqua: #63DBFF; --ictu-azure: #457AFF;
   --ictu-neutral-200: #F4F4F4; --ictu-neutral-700: #666666;
+  /* Groen voor de groepen in de releasetabel waarin het team zelf iets invoert en voor een gehaald target; donker
+     genoeg voor goed contrast op de lichte achtergronden. */
+  --green: #14632e; --green-50: #E8F3EB;
 }
 h1, h2, h3 { color: var(--ictu-marine); }
 body { font-family: system-ui, sans-serif; margin: 1rem auto; max-width: 100rem; padding: 0 1rem; }
@@ -16,7 +19,7 @@ body { font-family: system-ui, sans-serif; margin: 1rem auto; max-width: 100rem;
    lange pagina. */
 .page-header {
   position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
-  padding: 0.5rem 1rem; margin-bottom: 0.75rem; border-radius: 0.5rem; background: var(--ictu-magenta-50);
+  padding: 0.5rem 1rem; margin-bottom: 0.75rem; border-radius: 0.5rem; background: var(--ictu-marine-50);
   /* Een witte rand boven de balk, zodat de pagina er bij het scrollen niet boven langs schuift. */
   box-shadow: 0 -1rem 0 #fff;
 }
@@ -57,6 +60,8 @@ table.results td:nth-child(n+3), table.results thead tr:last-child th { text-ali
 /* Wat extra ruimte voor elk onderdeel, zodat de paren target en werkelijk bij elkaar horen. */
 table.results tbody td:nth-child(odd):nth-child(n+3), table.results tfoot td:nth-child(odd):nth-child(n+3),
 table.results thead tr:last-child th:nth-child(odd) { padding-left: 1.5rem; }
+/* Business waarde, bugs en technische schuld zijn even breed; de kolommen van de tweede koprij bepalen de breedte. */
+table.results thead tr:last-child th:nth-child(n+3) { width: 5rem; }
 table.results thead th { color: var(--ictu-marine); vertical-align: bottom; text-align: left; }
 table.results thead th[colspan] {
   text-align: center; padding-left: 1.5rem;
@@ -72,5 +77,10 @@ table.results tbody tr > :first-child, table.results tfoot tr > :first-child {
   border-radius: 0.4rem 0 0 0.4rem; color: var(--ictu-marine); font-weight: 600;
 }
 table.results tbody tr > :last-child, table.results tfoot tr > :last-child { border-radius: 0 0.4rem 0.4rem 0; }
-td.achieved { color: #1b7f3b; }
+/* Na het einde staan de resultaten van de rondes onder elkaar, met duidelijk ruimte ertussen. */
+#results-tables > section + section { margin-top: 3rem; }
+/* Of het target is gehaald, blijkt uit de kleur en uit een vinkje of kruisje, ook voor wie kleuren slecht ziet. */
+td.achieved { color: var(--green); }
 td.missed { color: #b00020; }
+td.achieved::before { content: "✓ "; font-weight: bold; }
+td.missed::before { content: "✗ "; font-weight: bold; }

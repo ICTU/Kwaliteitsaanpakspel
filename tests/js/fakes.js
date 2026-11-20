@@ -165,6 +165,8 @@ export function fakeBrowser(t, routes, storage = {}, hash = "") {
     windowListeners: {},
     history: {replaced: [], replaceState(...args) { this.replaced.push(args); }},
     clipboard: {written: [], async writeText(text) { this.written.push(text); }},
+    // De vragen die de pagina heeft gesteld en het antwoord dat de gebruiker geeft.
+    confirmations: {asked: [], answer: true},
     document: new FakeDocument(),
     server: new FakeServer(routes),
     storage: new FakeStorage(storage),
@@ -179,6 +181,7 @@ export function fakeBrowser(t, routes, storage = {}, hash = "") {
     location: browser.location,
     history: browser.history,
     navigator: {clipboard: browser.clipboard},
+    confirm: message => { browser.confirmations.asked.push(message); return browser.confirmations.answer; },
     addEventListener: (type, listener) => { browser.windowListeners[type] = listener; },
   }));
   browser.element = id => browser.document.getElementById(id);
@@ -215,7 +218,7 @@ const CARDS = ["one_point_cards", "two_point_cards", "three_point_cards", "bug_c
 // kaartjes, bijvoorbeeld {one_point_cards: 3, bug_cards: 1}.
 export function score(
   developers, businessValue = 0, openBugs = 0, completedReleases = 0,
-  {testers = [0, 0, 0, 0], bugFixing = [0, 0, 0, 0], techDebt = [0, 0, 0, 0], cards = [{}, {}, {}, {}], risks = [[], [], [], []], roles = [[], [], [], []], protectedRisks = [{}, {}, {}, {}], measures = [[], [], [], []],
+  {testers = [0, 0, 0, 0], bugFixing = [0, 0, 0, 0], techDebt = [0, 0, 0, 0], cards = [{}, {}, {}, {}], risks = [[], [], [], []], roles = [[], [], [], []], protectedRisks = [{}, {}, {}, {}], imposedRisks = [{}, {}, {}, {}], sharedRisks = [{}, {}, {}, {}], measures = [[], [], [], []],
     availableMeasures = [MEASURE_KEYS, MEASURE_KEYS, MEASURE_KEYS, MEASURE_KEYS], unavailableMeasures = [{}, {}, {}, {}],
     extraDevelopers = [0, 0, 0, 0], extraTesters = [0, 0, 0, 0], velocityChanges = [[], [], [], []], step = "team",
     steps = ["team", "risks", "velocity", "cards"], teamLocked = false} = {},
@@ -235,6 +238,8 @@ export function score(
       risks: risks[index],
       roles: roles[index],
       protected_risks: protectedRisks[index],
+      imposed_risks: imposedRisks[index],
+      shared_risks: sharedRisks[index],
       measures: measures[index],
       available_measures: availableMeasures[index],
       unavailable_measures: unavailableMeasures[index],
@@ -258,6 +263,7 @@ export function score(
       cost: (count + testers[index]) * 100,
     };
     budget -= release.cost;
+    release.remaining_budget = budget;
     return release;
   });
   return {

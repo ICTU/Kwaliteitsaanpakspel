@@ -2,8 +2,15 @@
 
 import {REFRESH_INTERVAL, fetchState, phase, renderResults, resultsTable, resultsTitle} from "./teams.js";
 
+// Na het einde start de spelleider een nieuw spel; dat wist de teams en hun resultaten, dus eerst vraagt de pagina of
+// de spelleider het zeker weet.
 export function nextAction(game) {
-  if (game.finished) return null;
+  if (game.finished) {
+    return {
+      path: "restart", label: "Start nieuw spel",
+      confirmation: "Een nieuw spel wist alle teams en resultaten; de teams melden zich opnieuw aan. Doorgaan?",
+    };
+  }
   if (game.round === null) return {path: "start-round", label: "Start ronde 1"};
   if (game.round_finished) return {path: "start-round", label: `Start ronde ${game.round + 1}`};
   return {path: "finish-round", label: `Stop ronde ${game.round}`};
@@ -44,11 +51,12 @@ export function main() {
   let action = null;
 
   // Toon de links om teams opnieuw te verbinden; alleen opnieuw opbouwen als de teams zijn veranderd, zodat een
-  // "Gekopieerd" blijft staan.
-  async function showReconnectLinks(teams) {
-    element("reconnect").hidden = teams.length === 0;
+  // "Gekopieerd" blijft staan. Als het spel is afgelopen, hoeft geen team meer opnieuw te verbinden.
+  async function showReconnectLinks(teams, finished) {
+    const hidden = teams.length === 0 || finished;
+    element("reconnect").hidden = hidden;
     const key = teams.map(team => team.name).join("\n");
-    if (teams.length === 0 || element("reconnect-links").dataKey === key) return;
+    if (hidden || element("reconnect-links").dataKey === key) return;
     const links = await (await fetch("/api/teams/links")).json();
     element("reconnect-links").replaceChildren(...reconnectItems(links));
     element("reconnect-links").dataKey = key;
@@ -63,12 +71,11 @@ export function main() {
       element(name).hidden = name !== currentPhase;
     }
     element("status").textContent = status;
-    element("action").hidden = action === null;
     element("action").disabled = teams.length === 0;
-    element("action").textContent = action?.label ?? "";
+    element("action").textContent = action.label;
     element("no-teams").hidden = teams.length > 0;
     element("team-names").replaceChildren(...teamNames(teams));
-    await showReconnectLinks(teams);
+    await showReconnectLinks(teams, game.finished);
     if (currentPhase === "playing") {
       // Tijdens de ronde ziet de spelleider ook bij welke stap van de release elk team is.
       const stepLabels = Object.fromEntries(game.steps.map(({key, label}) => [key, label]));
@@ -80,6 +87,7 @@ export function main() {
   }
 
   element("action").addEventListener("click", async () => {
+    if (action.confirmation && !confirm(action.confirmation)) return;
     const response = await fetch(`/api/game/${action.path}`, {method: "POST"});
     const body = await response.json();
     element("error").textContent = response.ok ? "" : body.detail;

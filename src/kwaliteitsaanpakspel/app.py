@@ -209,4 +209,9 @@ def create_app(join_url: str, game: Game | None = None) -> FastAPI:
         """Stop de huidige ronde."""
         return game_master_action(request, game.finish_round)
 
+    @app.post("/api/game/restart")
+    def restart(request: Request) -> GameStateDict:
+        """Start een nieuw spel, waarvoor de teams zich opnieuw aanmelden."""
+        return game_master_action(request, game.restart)
+
     return app

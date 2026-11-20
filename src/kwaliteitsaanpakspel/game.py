@@ -3,6 +3,7 @@
 Elke ronde is een eigen instantie van het spel: alle teams beginnen elke ronde opnieuw.
 """
 
+import random
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
@@ -50,6 +51,18 @@ RISKS = {
     "change_of_management": "🧭 Wisseling in de aansturing",
     "no_time_at_client": "⏳ Geen tijd bij opdrachtgever",
 }
+# Risico's die ook gelden voor een ander team. Als een team een release met zo'n risico afrondt, treedt het risico ook op
+# in de volgende release van een willekeurig ander team dat nog niet in de laatste release zit. Dat team kan het risico
+# niet uitvinken, maar wel een rol of maatregel inzetten die ertegen beschermt.
+SHARED_RISKS = frozenset(
+    {
+        "release_not_accepted",
+        "scope_extension",
+        "operations_cannot_keep_up",
+        "target_architecture_changes",
+        "change_of_management",
+    }
+)
 # De rollen die een team vanaf ROLES_FROM_ROUND per release kan inzetten, elk 0 of 1 keer.
 ROLES = {
     "architect": "👨🏻‍💼 Architect",
@@ -187,6 +200,10 @@ class Release:
     bug_cards: int = 0
     tech_debt_cards: int = 0
     risks: frozenset[str] = frozenset()  # de risico's die in de release zijn opgetreden
+    # De risico's die een ander team in de release heeft opgelegd (zie SHARED_RISKS), met de naam van dat team.
+    imposed_risks: dict[str, str] = field(default_factory=dict)
+    # De risico's uit de release die het team aan een ander team heeft opgelegd, met de naam van dat team.
+    shared_risks: dict[str, str] = field(default_factory=dict)
     roles: frozenset[str] = frozenset()  # de rollen die het team in de release inzet
     measures: frozenset[str] = frozenset()  # de maatregelen die het team in de release neemt
     step: str = field(default="team", compare=False)  # de stap (zie STEPS) waarin het team de release doorloopt
@@ -435,8 +452,9 @@ class Score:
         """Geef de stand als dictionary, met per release de targets, het beschikbare budget, de ingezette mensen, de
         velocity, de oploscapaciteit, wat het team heeft opgeleverd en wat het team cumulatief heeft opgeleverd.
 
-        Het beschikbare budget van een release is het startbudget minus de kosten van de eerdere releases.
-        Het budget kan negatief worden.
+        Het beschikbare budget van een release is het startbudget minus de kosten van de eerdere releases; wat er aan het
+        eind van de release over is, is het beschikbare budget minus de kosten van de release. Het budget kan negatief
+        worden.
 
         De cumulatieve bugs en technische schuld zijn wat er na de release nog open staat: wat er openstond, plus wat er
         in de release bij is gekomen, minus wat het team heeft opgelost.
@@ -484,6 +502,7 @@ class Score:
                     "tech_debt_target_changes": tech_debt_target_changes,
                     "budget": budget,
                     "budget_changes": budget_changes,
+                    "remaining_budget": budget - release.cost,
                     # Het totale budget tot en met de release en wat het team tot en met de release heeft uitgegeven.
                     "cumulative_budget": budget + spent,
                     "cumulative_cost": spent + release.cost,
@@ -509,6 +528,12 @@ class Score:
                     "risks": [risk for risk in RISKS if risk in release.risks],
                     "roles": [role for role in ROLES if role in release.roles],
                     "protected_risks": release.protected_risks,
+                    "imposed_risks": {
+                        risk: release.imposed_risks[risk] for risk in RISKS if risk in release.imposed_risks
+                    },
+                    "shared_risks": {
+                        risk: release.shared_risks[risk] for risk in RISKS if risk in release.shared_risks
+                    },
                     "measures": [measure for measure in MEASURES if measure in release.measures],
                     "available_measures": available_measures(index, release),
                     "unavailable_measures": unavailable_measures(index, release),
@@ -559,7 +584,8 @@ class Team:
 class Game:
     """Een spel met nul of meer teams en LAST_ROUND rondes."""
 
-    def __init__(self) -> None:
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self.rng = rng or random.Random()  # om het team te kiezen dat een gedeeld risico krijgt (zie SHARED_RISKS)
         self.teams: dict[str, Team] = {}
         self.round: int | None = None
         self.round_finished = False
@@ -610,6 +636,15 @@ class Game:
         if self.round_finished:
             raise GameError(f"Ronde {self.round} is al afgelopen.")
         self.round_finished = True
+
+    def restart(self) -> None:
+        """Start een nieuw spel, als het spel is afgelopen. De teams en hun resultaten verdwijnen; de teams melden zich
+        opnieuw aan."""
+        if not self.finished:
+            raise GameError("Het spel is nog niet afgelopen.")
+        self.teams.clear()
+        self.round = None
+        self.round_finished = False
 
     def current_score(self, team_name: str) -> Score:
         """Geef de stand van een team in de ronde die bezig is."""
@@ -671,8 +706,10 @@ class Game:
                 reason = PROTECTION_REASONS.get(cause) or f"{(ROLES | MEASURES)[cause]} beschermt ertegen"
                 raise GameError(f"{RISKS[protected[0]]} kan niet optreden: {reason}.")
             release.risks = frozenset(risks)
-        # Een risico waartegen een nieuw ingezette rol of maatregel beschermt, kan niet meer optreden.
+        # Een risico waartegen een nieuw ingezette rol of maatregel beschermt, kan niet meer optreden. Een risico van een
+        # ander team kan het team niet uitvinken; het treedt op zolang er niets tegen beschermt.
         release.risks -= release.protected_risks.keys()
+        release.risks |= release.imposed_risks.keys() - release.protected_risks.keys()
         if developers is not None:
             release.developers = developers
         if testers is not None:
@@ -741,7 +778,30 @@ class Game:
             verb = "moet" if open_cards == 1 else "moeten"
             raise GameError(f"Voer eerst alle omgedraaide kaartjes in; er {verb} er nog {open_cards} worden ingevoerd.")
         score.completed_releases += 1
+        self.share_risks(team_name, score.releases[score.completed_releases - 1])
         return self.teams[team_name]
+
+    def share_risks(self, team_name: str, release: Release) -> None:
+        """Leg de gedeelde risico's (zie SHARED_RISKS) die in de afgeronde release van een team zijn opgetreden, op aan
+        een willekeurig ander team, in de volgende release van dat team. Alleen teams die nog niet in de laatste release
+        zitten, kunnen een risico krijgen. Risico's die het team zelf van een ander team kreeg, gaan niet verder."""
+        for risk in RISKS:
+            if risk not in SHARED_RISKS or risk not in release.risks or risk in release.imposed_risks:
+                continue
+            receivers = [
+                team
+                for name, team in self.teams.items()
+                if name != team_name and team.rounds[-1].completed_releases < RELEASES_PER_ROUND - 1
+            ]
+            if not receivers:
+                continue
+            receiver = self.rng.choice(receivers)
+            release.shared_risks = release.shared_risks | {risk: receiver.name}
+            score = receiver.rounds[-1]
+            next_release = score.releases[score.completed_releases + 1]
+            next_release.imposed_risks = next_release.imposed_risks | {risk: team_name}
+            score.cumulate()
+            next_release.risks |= {risk} - next_release.protected_risks.keys()
 
 
 def unavailable_measures(index: int, release: Release) -> dict[str, str]:
